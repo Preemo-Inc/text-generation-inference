@@ -6,7 +6,7 @@ Our goal is to create an open-source text generation inference server that is mo
 
 ## our plan
 
-We at Preemo are currently busy working on our first product release, so we expect to be able to start open-source development on this repository in September 2023. We will be working on the following, to ease the external contributions:
+We at Preemo are currently busy working on our first release of our other product, so we expect to be able to start open-source development on this repository in September 2023. We will be working on the following, to ease the external contributions:
 
 - [ ] Adding a public visible CI/CD pipeline that runs tests and builds docker images
 - [ ] Unifying the build tools
