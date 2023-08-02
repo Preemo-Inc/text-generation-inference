@@ -60,7 +60,7 @@ class SantaCoder(CausalLM):
                 trust_remote_code=trust_remote_code,
             )
 
-        super(CausalLM, self).__init__(
+        super().__init__(
             model=model,
             tokenizer=tokenizer,
             requires_padding=True,
