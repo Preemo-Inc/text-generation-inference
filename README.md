@@ -15,7 +15,7 @@ We at Preemo are currently busy working on our first release of our other produc
 
 Our long-term goal is to grow the community around this repository, as a playground for trying out new ideas and optimizations in LLM inference. We at Preemo will implement features that interest us, but we also welcome contributions from the community, as long as they are modularized and composable.
 
-## Extra features in comparison to Hugging Face `text-generation-inference`
+## Extra features in comparison to Hugging Face `text-generation-inference` v0.9.4
 
 ### 4bit quantization
 
