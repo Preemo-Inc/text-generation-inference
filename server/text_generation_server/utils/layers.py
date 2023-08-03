@@ -199,7 +199,7 @@ def get_linear(weight, bias, quantize):
         )
     elif quantize == "gptq":
         try:
-            qweight, qzeros, scales, g_idx, bits, groupsize = weight
+            qweight, qzeros, scales, g_idx, bits, groupsize, use_exllama = weight
         except Exception:
             raise NotImplementedError(
                 f"The passed weight is not `gptq` compatible, loader needs to be updated."
