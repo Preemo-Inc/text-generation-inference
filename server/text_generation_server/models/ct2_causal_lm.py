@@ -1,11 +1,10 @@
 # coding=utf-8
-# Copyright 2023 Michael Feil. All rights reserved.
+# Copyright 2023 Michael Feil.
 #
 # This code is loosely based on Huggingface text-generation-inference v0.9.3's causal_lm.py implementation.
 # While it remains licensed under Apache License, Version 2.0,
 # text-generation-inference itself on 7/28/2023 has changed its license.
-# This code remains unaffected by this, and contributing it to a 
-# upstream repo with new License was not intentional.
+# This code remains unaffected by this change.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -81,14 +80,16 @@ class CT2CausalLM(Model):
         }
         if torch.cuda.is_available():
             self.ct2_device = "cuda"
-            ct2_generator_kwargs["intra_threads"] = int(os.environ.get(
-                "TGI_CT2_INTRA_THREADS", 1
-            ))
+            ct2_generator_kwargs["intra_threads"] = int(
+                os.environ.get("TGI_CT2_INTRA_THREADS", 1)
+            )
         else:
             self.ct2_device = "cpu"
-            ct2_generator_kwargs["intra_threads"] = int(os.environ.get(
-                "TGI_CT2_INTRA_THREADS", multiprocessing.cpu_count() // 2
-            ))
+            ct2_generator_kwargs["intra_threads"] = int(
+                os.environ.get(
+                    "TGI_CT2_INTRA_THREADS", multiprocessing.cpu_count() // 2
+                )
+            )
 
         if dtype == torch.float16 and self.ct2_device == "cuda":
             ct2_compute_type = "float16"
@@ -166,7 +167,7 @@ class CT2CausalLM(Model):
             else:
                 tokenizer.add_special_tokens({"pad_token": "[PAD]"})
 
-        super(CT2CausalLM, self).__init__(
+        super().__init__(
             model=model,
             tokenizer=tokenizer,
             requires_padding=True,
@@ -182,37 +183,6 @@ class CT2CausalLM(Model):
         return self.tokenizer.decode(
             generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )
-
-    # def forward_slowtokenize_ct2(
-    #     self, all_input_ids,
-    # ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
-    #     # Model Forward, by copy between cpu and cuda
-    #     tokens_in  = [self.tokenizer.convert_ids_to_tokens(i) for i in all_input_ids]
-    #     logits = self.ct2_model.forward_batch(
-    #         tokens_in
-    #     )
-    #     logits = torch.as_tensor(logits, device=all_input_ids.device)
-    #     logits = logits.to(torch.float16) if all_input_ids.device.type == "cuda" else logits.to(torch.float32)
-    #     return logits, None
-
-    # def forward_greedy_logits(
-    #     self, all_input_ids: List[List[int]],
-    # ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
-    #     # fallback just to
-    #     tokens_in  = [self.tokenizer.convert_ids_to_tokens(i) for i in all_input_ids]
-    #     ids = self.ct2_model.generate_batch(
-    #         tokens_in,
-    #         min_length=1,
-    #         max_length=1,
-    #         include_prompt_in_result=False,
-    #         sampling_temperature=0,
-    #     )
-    #     # create fake logits from greedy token
-    #     logits = torch.full((len(tokens_in), 1, self.model.config.vocab_size), -10, dtype=torch.float16, device="cuda")
-    #     for i, seq in enumerate(ids):
-    #         token = seq.sequences_ids[0]
-    #         logits[i, 0, token] = 10
-    #     return logits, None
 
     def forward_ct2(
         self,
@@ -253,23 +223,7 @@ class CT2CausalLM(Model):
     def generate_token(
         self, batch: CausalLMBatch
     ) -> Tuple[List[Generation], Optional[CausalLMBatch]]:
-        # slice the attention mask to the correct shape
-        # attention_mask = batch.attention_mask[:, : -batch.padding_right_offset]
-
         logits, past = self.forward_ct2(batch.all_input_ids, batch.input_lengths)
-
-        # do some verification, see if other forward methods produce same result.
-        # logits2, past2 = self.forward_slowtokenize_ct2(
-        #     batch.all_input_ids
-        # )
-
-        # if sum := torch.isnan(logits).sum():
-        #     sum2 = torch.isnan(logits2).sum()
-        #     raise ValueError(f"logits {sum}, {sum2}")
-        # if sum2 := torch.isnan(logits2).sum():
-        #     raise ValueError(f"logits2 {sum}")
-        # torch.testing.assert_close(logits, logits2)
-        # raise ValueError(f"all_input_ids={len(batch.all_input_ids)},{batch.all_input_ids[0].shape}, logits={logits.shape}, tokens_in={len(tokens_in)},{len(tokens_in[0])}")
 
         # Results
         generations: List[Generation] = []
