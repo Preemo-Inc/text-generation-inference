@@ -112,7 +112,7 @@ class CT2CausalLM(Model):
         # Start CT2 - conversion
         out_dir = (
             Path(HUGGINGFACE_HUB_CACHE)
-            / f"ct2models-{model_id.replace('/','--')}--{ct2_compute_type}"
+            / "ct2models" / f"{model_id.replace('/','--')}--{ct2_compute_type}"
         )
 
         if not os.path.exists(out_dir / "model.bin"):
