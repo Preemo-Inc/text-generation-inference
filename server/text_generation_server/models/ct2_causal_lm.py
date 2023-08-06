@@ -63,7 +63,7 @@ class CT2CausalLM(Model):
         if ctranslate2 is None:
             raise ValueError(
                 "for quantization with ct2, the installation requires the pip package ctranslate2. "
-                "install via `text-generation-server[ct2]` or pip install ctranslate2 is required.",
+                "install via `text-generation-server[ct2]` or `pip install ctranslate2` is required.",
             )
 
         tokenizer = AutoTokenizer.from_pretrained(
