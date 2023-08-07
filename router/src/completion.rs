@@ -532,7 +532,10 @@ pub(crate) async fn generate_to_chatcompletions(
     Json(resp.into())
 }
 
-pub(crate) fn chat_start_message(created_time: u32, model_name: &String) -> ChatCompletionsStreamResponse {
+pub(crate) fn chat_start_message(
+    created_time: u32,
+    model_name: &String,
+) -> ChatCompletionsStreamResponse {
     let choices: ChatCompletionDeltaStreamChoices = ChatCompletionDeltaStreamChoices {
         delta: ChatDeltaStreamMessage {
             content: None,
