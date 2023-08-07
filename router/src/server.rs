@@ -1,11 +1,33 @@
+/// Copyright 2023 text-generation-inference contributors
+///
+/// Licensed under the Apache License, Version 2.0 (the "License");
+/// you may not use this file except in compliance with the License.
+/// You may obtain a copy of the License at
+///
+///     http://www.apache.org/licenses/LICENSE-2.0
+///
+/// Unless required by applicable law or agreed to in writing, software
+/// distributed under the License is distributed on an "AS IS" BASIS,
+/// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+/// See the License for the specific language governing permissions and
+/// limitations under the License.
+///
+
 /// HTTP Server logic
+use crate::completion::{
+    chat_start_message, chat_to_generate_request, create_streaming_event,
+    generate_to_chatcompletions, generate_to_completions, get_chatformatter, ChatCompletionChoices,
+    ChatCompletionDeltaStreamChoices, ChatCompletionsResponse, ChatCompletionsStreamResponse,
+    ChatDeltaStreamMessage, ChatMessage, ChatRole, CompatChatCompletionRequest,
+    CompatCompletionRequest, CompletionChoices, CompletionsResponse, Usage,
+};
 use crate::health::Health;
 use crate::infer::{InferError, InferResponse, InferStreamResponse};
 use crate::validation::ValidationError;
 use crate::{
     BestOfSequence, CompatGenerateRequest, Details, ErrorResponse, FinishReason,
-    GenerateParameters, GenerateRequest, GenerateResponse, HubModelInfo, Infer, Info, PrefillToken,
-    StreamDetails, StreamResponse, Token, Validation,
+    GenerateParameters, GenerateRequest, GenerateResponse, HubModelInfo, Infer, Info,
+    OpenaiStreamType, PrefillToken, StreamDetails, StreamResponse, Token, Validation,
 };
 use axum::extract::Extension;
 use axum::http::{HeaderMap, Method, StatusCode};
@@ -58,7 +80,7 @@ async fn compat_generate(
     infer: Extension<Infer>,
     req: Json<CompatGenerateRequest>,
 ) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
-    let mut req = req.0;
+    let mut req: CompatGenerateRequest = req.0;
 
     // default return_full_text given the pipeline_tag
     if req.parameters.return_full_text.is_none() {
@@ -74,6 +96,107 @@ async fn compat_generate(
         let (headers, generation) = generate(infer, Json(req.into())).await?;
         // wrap generation inside a Vec to match api-inference
         Ok((headers, Json(vec![generation.0])).into_response())
+    }
+}
+
+/// Plain Completion request. Enable stream of token by setting `stream == true`
+#[utoipa::path(
+    post,
+    tag = "Text Generation Inference",
+    path = "/completions",
+    request_body = CompatCompletionRequest,
+    responses(
+    (status = 200, description = "Generated Text",
+    content(
+    ("application/json" = CompletionsResponse),
+    ("text/event-stream" = CompletionsResponse),
+    )),
+    (status = 424, description = "Generation Error", body = ErrorResponse,
+    example = json ! ({"error": "Request failed during generation"})),
+    (status = 429, description = "Model is overloaded", body = ErrorResponse,
+    example = json ! ({"error": "Model is overloaded"})),
+    (status = 422, description = "Input validation error", body = ErrorResponse,
+    example = json ! ({"error": "Input validation error"})),
+    (status = 500, description = "Incomplete generation", body = ErrorResponse,
+    example = json ! ({"error": "Incomplete generation"})),
+    )
+    )]
+#[instrument(skip(infer, req))]
+async fn completions_generate(
+    info: Extension<Info>,
+    infer: Extension<Infer>,
+    req: Json<CompatCompletionRequest>,
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
+    let req = req.0;
+
+    if req.stream {
+        Ok(generate_stream_openai(
+            infer,
+            Json(req.into()),
+            OpenaiStreamType::CompletionsResponse,
+            info.model_id.clone(),
+        )
+        .await
+        .into_response())
+    } else {
+        let (headers, generation) = generate(infer, Json(req.into())).await?;
+
+        let generation = generate_to_completions(generation, info).await;
+        // wrap generation inside a Vec to match api-inference
+        Ok((headers, Json(generation.0)).into_response())
+    }
+}
+
+/// Chat Completion request. Enable stream of token by setting `stream == true`
+#[utoipa::path(
+    post,
+    tag = "Text Generation Inference",
+    path = "/chat/completions",
+    request_body = CompatChatCompletionRequest,
+    responses(
+    (status = 200, description = "Generated Text",
+    content(
+    ("application/json" = ChatCompletionsResponse),
+    ("text/event-stream" = ChatCompletionsStreamResponse),
+    )),
+    (status = 424, description = "Generation Error", body = ErrorResponse,
+    example = json ! ({"error": "Request failed during generation"})),
+    (status = 429, description = "Model is overloaded", body = ErrorResponse,
+    example = json ! ({"error": "Model is overloaded"})),
+    (status = 422, description = "Input validation error", body = ErrorResponse,
+    example = json ! ({"error": "Input validation error"})),
+    (status = 500, description = "Incomplete generation", body = ErrorResponse,
+    example = json ! ({"error": "Incomplete generation"})),
+    )
+    )]
+#[instrument(skip(infer, req))]
+async fn chatcompletions_generate(
+    info: Extension<Info>,
+    infer: Extension<Infer>,
+    req: Json<CompatChatCompletionRequest>,
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
+    let stream = req.stream;
+    let req: CompatChatCompletionRequest = req.0;
+    // TODO: move this somewhere else
+
+    let chat_formatter = get_chatformatter();
+    let req: GenerateRequest = chat_to_generate_request(req, chat_formatter);
+
+    if stream {
+        Ok(generate_stream_openai(
+            infer,
+            Json(req.into()),
+            OpenaiStreamType::ChatCompletionsStreamResponse,
+            info.model_id.clone(),
+        )
+        .await
+        .into_response())
+    } else {
+        let (headers, generation) = generate(infer, Json(req.into())).await?;
+
+        let generation = generate_to_chatcompletions(generation, info).await;
+        // wrap generation inside a Vec to match api-inference
+        Ok((headers, Json(generation.0)).into_response())
     }
 }
 
@@ -330,6 +453,7 @@ time_per_token,
 seed,
 )
 )]
+
 async fn generate_stream(
     infer: Extension<Infer>,
     req: Json<GenerateRequest>,
@@ -491,6 +615,161 @@ async fn generate_stream(
     (headers, Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
+async fn generate_stream_openai(
+    infer: Extension<Infer>,
+    req: Json<GenerateRequest>,
+    stream_type: OpenaiStreamType,
+    model_name: String,
+) -> (
+    HeaderMap,
+    Sse<impl Stream<Item = Result<Event, Infallible>>>,
+) {
+    let span = tracing::Span::current();
+    let start_time = Instant::now();
+    let created_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u32;
+    metrics::increment_counter!("tgi_request_count");
+
+    tracing::debug!("Input: {}", req.0.inputs);
+
+    let compute_characters = req.0.inputs.chars().count();
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-compute-type", "gpu+optimized".parse().unwrap());
+    headers.insert(
+        "x-compute-characters",
+        compute_characters.to_string().parse().unwrap(),
+    );
+    headers.insert("X-Accel-Buffering", "no".parse().unwrap());
+
+    let stream = async_stream::stream! {
+        // Inference
+        let mut end_reached = false;
+        let mut error = false;
+
+        let details = req.0.parameters.details;
+
+        let best_of = req.0.parameters.best_of.unwrap_or(1);
+        if best_of != 1 {
+            let err = InferError::from(ValidationError::BestOfStream);
+            metrics::increment_counter!("tgi_request_failure", "err" => "validation");
+            tracing::error!("{err}");
+            yield Ok(Event::from(err));
+        } else if req.0.parameters.decoder_input_details {
+            let err = InferError::from(ValidationError::PrefillDetailsStream);
+            metrics::increment_counter!("tgi_request_failure", "err" => "validation");
+            tracing::error!("{err}");
+            yield Ok(Event::from(err));
+        } else {
+            match infer.generate_stream(req.0).instrument(info_span!(parent: &span, "async_stream")).await {
+                // Keep permit as long as generate_stream lives
+                Ok((_permit, mut response_stream)) => {
+                    // Server-Sent Event stream
+                    match stream_type {
+                        OpenaiStreamType::ChatCompletionsStreamResponse => {
+                            let start_msg = chat_start_message(created_time, &model_name);
+                            yield Ok(Event::from(Event::default().json_data(start_msg).unwrap()))
+                        },
+                        _ => ()
+                    };
+                    while let Some(response) = response_stream.next().await {
+                        match response {
+                            Ok(response) => {
+                                match response {
+                                    // Prefill is ignored
+                                    InferStreamResponse::Prefill(_) => {}
+                                    // Yield event for every new token
+                                    InferStreamResponse::Token(token) => {
+                                        tracing::debug!(parent: &span, "Token: {:?}", token);
+                                        let stream_event = create_streaming_event(&stream_type, created_time, None, token, &model_name);
+
+                                        yield Ok(stream_event);
+                                    }
+                                    // Yield event for last token and compute timings
+                                    InferStreamResponse::End {
+                                        token,
+                                        generated_text,
+                                        start,
+                                        queued,
+                                    } => {
+                                        // Token details
+                                        let details = match details {
+                                            true => Some(StreamDetails {
+                                                finish_reason: FinishReason::from(generated_text.finish_reason),
+                                                generated_tokens: generated_text.generated_tokens,
+                                                seed: generated_text.seed,
+                                            }),
+                                            false => None,
+                                        };
+
+                                        // Timings
+                                        let total_time = start_time.elapsed();
+                                        let validation_time = queued - start_time;
+                                        let queue_time = start - queued;
+                                        let inference_time = Instant::now() - start;
+                                        let time_per_token = inference_time / generated_text.generated_tokens;
+
+                                        // Tracing metadata
+                                        span.record("total_time", format!("{total_time:?}"));
+                                        span.record("validation_time", format!("{validation_time:?}"));
+                                        span.record("queue_time", format!("{queue_time:?}"));
+                                        span.record("inference_time", format!("{inference_time:?}"));
+                                        span.record("time_per_token", format!("{time_per_token:?}"));
+                                        span.record("seed", format!("{:?}", generated_text.seed));
+
+                                        // Metrics
+                                        metrics::increment_counter!("tgi_request_success");
+                                        metrics::histogram!("tgi_request_duration", total_time.as_secs_f64());
+                                        metrics::histogram!("tgi_request_validation_duration", validation_time.as_secs_f64());
+                                        metrics::histogram!("tgi_request_queue_duration", queue_time.as_secs_f64());
+                                        metrics::histogram!("tgi_request_inference_duration", inference_time.as_secs_f64());
+                                        metrics::histogram!("tgi_request_mean_time_per_token_duration", time_per_token.as_secs_f64());
+                                        metrics::histogram!("tgi_request_generated_tokens", generated_text.generated_tokens as f64);
+
+                                        // create Openai StreamResponse
+                                        end_reached = true;
+
+                                        tracing::debug!(parent: &span, "Output: {}", generated_text.text);
+                                        tracing::info!(parent: &span, "Success");
+
+                                        let stream_event = create_streaming_event(&stream_type, created_time, details, token, &model_name);
+                                        yield Ok(stream_event);
+                                        yield Ok(Event::default().data("[DONE]"));
+                                        break;
+                                    }
+                                }
+                            }
+                            // yield error
+                            Err(err) => {
+                                error = true;
+                                yield Ok(Event::from(err));
+                                break;
+                            }
+                        }
+                    }
+                },
+                // yield error
+                Err(err) => {
+                    error = true;
+                    yield Ok(Event::from(err));
+                }
+            }
+            // Check if generation reached the end
+            // Skip if we already sent an error
+            if !end_reached && !error {
+                let err = InferError::IncompleteGeneration;
+                metrics::increment_counter!("tgi_request_failure", "err" => "incomplete");
+                tracing::error!("{err}");
+                yield Ok(Event::from(err));
+            }
+        }
+    };
+
+    (headers, Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
 /// Prometheus metrics scrape endpoint
 #[utoipa::path(
 get,
@@ -535,6 +814,8 @@ pub async fn run(
     compat_generate,
     generate,
     generate_stream,
+    completions_generate,
+    chatcompletions_generate,
     metrics,
     ),
     components(
@@ -552,6 +833,18 @@ pub async fn run(
     StreamResponse,
     StreamDetails,
     ErrorResponse,
+    // completions messages
+    CompatCompletionRequest,
+    CompatChatCompletionRequest,
+    ChatMessage,
+    ChatRole,
+    CompletionsResponse,
+    Usage,
+    CompletionChoices,
+    ChatCompletionsResponse,
+    ChatCompletionChoices,
+    ChatCompletionsStreamResponse,
+    ChatDeltaStreamMessage,    ChatCompletionDeltaStreamChoices,
     )
     ),
     tags(
@@ -672,6 +965,8 @@ pub async fn run(
         .route("/info", get(get_model_info))
         .route("/generate", post(generate))
         .route("/generate_stream", post(generate_stream))
+        .route("/completions", post(completions_generate))
+        .route("/chat/completions", post(chatcompletions_generate))
         // AWS Sagemaker route
         .route("/invocations", post(compat_generate))
         // Base Health route
