@@ -16,7 +16,7 @@
 /// HTTP Server logic
 use crate::completion::{
     chat_start_message, chat_to_generate_request, create_streaming_event,
-    generate_to_chatcompletions, generate_to_completions, get_chatformatter, ChatCompletionChoices,
+    generate_to_chatcompletions, generate_to_completions, get_chatformatter, create_timestamp, ChatCompletionChoices,
     ChatCompletionDeltaStreamChoices, ChatCompletionsResponse, ChatCompletionsStreamResponse,
     ChatDeltaStreamMessage, ChatMessage, ChatRole, CompatChatCompletionRequest,
     CompatCompletionRequest, CompletionChoices, CompletionsResponse, Usage,
@@ -626,10 +626,7 @@ async fn generate_stream_openai(
 ) {
     let span = tracing::Span::current();
     let start_time = Instant::now();
-    let created_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as u32;
+    let created_time = create_timestamp();
     metrics::increment_counter!("tgi_request_count");
 
     tracing::debug!("Input: {}", req.0.inputs);

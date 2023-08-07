@@ -23,6 +23,7 @@ use axum::response::sse::Event;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 pub(crate) struct CompatCompletionRequest {
@@ -336,7 +337,7 @@ pub(crate) struct CompletionsResponse {
     #[schema(example = "text_completion")]
     pub object: String,
     #[schema(example = 1589478379)]
-    pub created: u32,
+    pub created: u64,
     #[schema(example = "tgi")]
     pub model: String,
     pub choices: Vec<CompletionChoices>,
@@ -373,7 +374,7 @@ pub(crate) struct ChatCompletionsResponse {
     #[schema(example = "chat.completion")]
     pub object: String,
     #[schema(example = 1589478380)]
-    pub created: u32,
+    pub created: u64,
     #[schema(example = "tgi")]
     pub model: String,
     pub choices: Vec<ChatCompletionChoices>,
@@ -387,7 +388,7 @@ pub(crate) struct ChatCompletionsStreamResponse {
     #[schema(example = "chat.completion.chunk")]
     pub object: String,
     #[schema(example = 1589478380)]
-    pub created: u32,
+    pub created: u64,
     #[schema(example = "tgi")]
     pub model: String,
     pub choices: Vec<ChatCompletionDeltaStreamChoices>,
@@ -467,10 +468,7 @@ pub(crate) async fn generate_to_completions(
         total_tokens: gen_tokens + prefill_len,
         prompt_tokens: prefill_len,
     });
-    let created_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as u32;
+    let created_time = create_timestamp();
     let model = info.0.model_id;
     let resp: CompletionsResponse = CompletionsResponse {
         choices: vec![choices],
@@ -516,10 +514,7 @@ pub(crate) async fn generate_to_chatcompletions(
         total_tokens: gen_tokens + prefill_len,
         prompt_tokens: prefill_len,
     };
-    let created_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as u32;
+    let created_time = create_timestamp();
     let model = info.0.model_id;
     let resp = ChatCompletionsResponse {
         choices: vec![choices],
@@ -532,8 +527,15 @@ pub(crate) async fn generate_to_chatcompletions(
     Json(resp.into())
 }
 
+pub (crate) fn create_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time went backwards")
+        .as_secs() as u64
+}
+
 pub(crate) fn chat_start_message(
-    created_time: u32,
+    created_time: u64,
     model_name: &String,
 ) -> ChatCompletionsStreamResponse {
     let choices: ChatCompletionDeltaStreamChoices = ChatCompletionDeltaStreamChoices {
@@ -556,7 +558,7 @@ pub(crate) fn chat_start_message(
 pub(crate) fn create_streaming_event(
     // st: StreamResponse,
     stream_type: &OpenaiStreamType,
-    created_time: u32,
+    created_time: u64,
     details: Option<StreamDetails>,
     token: Token,
     model_name: &String,
@@ -581,7 +583,7 @@ pub(crate) fn create_streaming_event(
                 object: String::from("chat.completion.chunk"),
                 model: model_name.to_owned(),
             };
-            Event::default().json_data(response).unwrap()
+            Event::default().json_data(response).expect("cannot parse ChatCompletionsStreamResponse")
         }
         &OpenaiStreamType::CompletionsResponse => {
             let choices = CompletionChoices {
@@ -602,7 +604,7 @@ pub(crate) fn create_streaming_event(
                 model: model_name.to_owned(),
                 usage: None,
             };
-            Event::default().json_data(response).unwrap()
+            Event::default().json_data(response).expect("cannot parse streamed CompletionsResponse")
         }
     }
 }
