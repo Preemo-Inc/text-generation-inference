@@ -53,8 +53,9 @@ class CacheManager:
                     dtype=dtype,
                     device=device,
                 ),
-                torch.empty(
+                torch.full(
                     (num_blocks, num_heads, head_size, self.block_size),
+                    self.v_cache_initial_value,
                     dtype=dtype,
                     device=device,
                 ),
