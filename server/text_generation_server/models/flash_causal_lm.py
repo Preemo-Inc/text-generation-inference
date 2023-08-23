@@ -50,7 +50,6 @@ class CacheManager:
             (
                 torch.empty(
                     (num_blocks, num_heads, head_size // x, self.block_size, x),
-                    self.v_cache_initial_value,
                     dtype=dtype,
                     device=device,
                 ),
