@@ -48,8 +48,9 @@ class CacheManager:
         self.v_cache_initial_value = torch.finfo(dtype).max
         self.kv_cache = [
             (
-                torch.empty(
-                    (num_blocks, num_heads, head_size // x, self.block_size, x),
+                torch.full(
+                    (num_blocks, num_heads, head_size, self.block_size),
+                    self.v_cache_initial_value,
                     dtype=dtype,
                     device=device,
                 ),
