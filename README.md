@@ -2,6 +2,7 @@
 
 This is Preemo's fork of `text-generation-inference`, originally developed by Hugging Face. The original README is at [README-HuggingFace.md](README-HuggingFace.md). Since Hugging Face's `text-generation-inference` is no longer open-source, we have forked it and will continue to develop it here.
 
+
 Our goal is to create an open-source text generation inference server that is modularized to allow for easy add state-of-the-art models, functionalities and optimizations. Functionalities and optimizations should be composable, so that users can easily combine them to create a custom inference server that fits their needs.
 
 ## our plan
@@ -13,3 +14,9 @@ We at Preemo are currently busy working on our first release of our other produc
 - [ ] Modularizing the codebase, introducing a plugin system
 
 Our long-term goal is to grow the community around this repository, as a playground for trying out new ideas and optimizations in LLM inference. We at Preemo will implement features that interest us, but we also welcome contributions from the community, as long as they are modularized and composable.
+
+## Extra features in comparison to Hugging Face `text-generation-inference` v0.9.4
+
+### 4bit quantization
+
+4bit quantization is available using the [NF4 and FP4 data types from bitsandbytes](https://arxiv.org/pdf/2305.14314.pdf). It can be enabled by providing `--quantize bitsandbytes-nf4` or `--quantize bitsandbytes-fp4` as a command line argument to `text-generation-launcher`.

@@ -9,7 +9,7 @@ from typing import List
 HAS_BITS_AND_BYTES = True
 try:
     import bitsandbytes as bnb
-    from bitsandbytes.nn import Int8Params
+    from bitsandbytes.nn import Int8Params, Params4bit
 
 except ImportError:
     HAS_BITS_AND_BYTES = False
@@ -140,6 +140,39 @@ class Linear8bitLt(nn.Module):
         return out
 
 
+class Linear4bit(nn.Module):
+    def __init__(self, weight, bias, quant_type):
+        super().__init__()
+        self.weight = Params4bit(
+            weight.data, requires_grad=False, compress_statistics=True, quant_type=quant_type
+        )
+        self.compute_dtype = None
+        self.weight.cuda(weight.device)
+        self.bias = bias
+
+    def forward(self, x: torch.Tensor):
+        # weights are cast automatically as Int8Params, but the bias has to be cast manually
+        if self.bias is not None and self.bias.dtype != x.dtype:
+            self.bias.data = self.bias.data.to(x.dtype)
+
+        if getattr(self.weight, "quant_state", None) is None:
+            print(
+                "FP4 quantization state not initialized. Please call .cuda() or .to(device) on the LinearFP4 layer first."
+            )
+        inp_dtype = x.dtype
+        if self.compute_dtype is not None:
+            x = x.to(self.compute_dtype)
+
+        bias = None if self.bias is None else self.bias.to(self.compute_dtype)
+        out = bnb.matmul_4bit(
+            x, self.weight.t(), bias=bias, quant_state=self.weight.quant_state
+        )
+
+        out = out.to(inp_dtype)
+
+        return out
+
+
 def get_linear(weight, bias, quantize):
     if quantize is None:
         linear = FastLinear(weight, bias)
@@ -152,6 +185,18 @@ def get_linear(weight, bias, quantize):
         )
         if bias is not None:
             linear.bias = nn.Parameter(bias)
+    elif quantize == "bitsandbytes-fp4":
+        linear = Linear4bit(
+            weight,
+            bias,
+            quant_type="fp4",
+        )
+    elif quantize == "bitsandbytes-nf4":
+        linear = Linear4bit(
+            weight,
+            bias,
+            quant_type="nf4",
+        )
     elif quantize == "gptq":
         try:
             qweight, qzeros, scales, g_idx, bits, groupsize, use_exllama = weight
@@ -219,31 +264,36 @@ class TensorParallelHead(SuperLayer):
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if not self.should_gather:
+            return super().forward(input)
+
         world_size = self.process_group.size()
-        # Fast branch for single requests
-        if (
-            self.should_gather
-            and len(input.shape) == 2
-            and isinstance(self.linear, FastLinear)
-            and input.shape[0] == 1
-        ):
+        if len(input.shape) == 2 and isinstance(self.linear, FastLinear):
             out_dim = self.linear.weight.shape[0]
 
-            world_out = input.new_empty(1, out_dim * world_size)
-            local_out = input.new_empty(1, out_dim)
+            if input.shape[0] == 1:
+                world_out = input.new_empty(1, out_dim * world_size)
+                local_out = input.new_empty(1, out_dim)
+                gather_input = local_out
+            else:
+                world_out = input.new_empty(out_dim * world_size, input.shape[0])
+                gather_input = input.new_empty(out_dim, input.shape[0])
+                local_out = gather_input.T
 
             torch.mm(input, self.linear.weight.T, out=local_out)
 
             torch.distributed.all_gather_into_tensor(
-                world_out, local_out, group=self.process_group
+                world_out, gather_input, group=self.process_group
             )
-            return world_out
+
+            if input.shape[0] == 1:
+                return world_out
+            return world_out.T
 
         output = super().forward(input)
-        if not self.should_gather:
-            return output
-
-        world_output = [torch.empty_like(output) for _ in range(world_size)]
+        world_output = [
+            torch.empty_like(output) for _ in range(self.process_group.size())
+        ]
         torch.distributed.all_gather(world_output, output, group=self.process_group)
         world_output = torch.cat(world_output, dim=-1)
         return world_output

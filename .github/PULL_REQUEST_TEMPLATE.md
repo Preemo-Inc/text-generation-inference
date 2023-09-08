@@ -34,7 +34,4 @@ members/contributors who may be interested in your PR.
 
 <!-- Your PR will be replied to more quickly if you can figure out the right person to tag with @
 
-
-@OlivierDehaene OR @Narsil
-
  -->
