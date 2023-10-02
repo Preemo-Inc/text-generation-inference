@@ -16,6 +16,7 @@ class Quantization(str, Enum):
     bitsandbytes_nf4 = "bitsandbytes-nf4"
     bitsandbytes_fp4 = "bitsandbytes-fp4"
     gptq = "gptq"
+    ct2 = "ct2"
 
 
 class Dtype(str, Enum):
@@ -73,7 +74,7 @@ def serve(
     # Downgrade enum into str for easier management later on
     quantize = None if quantize is None else quantize.value
     dtype = None if dtype is None else dtype.value
-    if dtype is not None and quantize is not None:
+    if dtype is not None and quantize is not None and quantize != Quantization.ct2:
         raise RuntimeError(
             "Only 1 can be set between `dtype` and `quantize`, as they both decide how goes the final model."
         )
@@ -90,6 +91,7 @@ def download_weights(
     auto_convert: bool = True,
     logger_level: str = "INFO",
     json_output: bool = False,
+    trust_remote_code: bool = False
 ):
     # Remove default handler
     logger.remove()
@@ -169,6 +171,7 @@ def download_weights(
             config = AutoConfig.from_pretrained(
                 model_id,
                 revision=revision,
+                trust_remote_code=trust_remote_code
             )
             architecture = config.architectures[0]
 
