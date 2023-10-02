@@ -22,6 +22,8 @@ mod env_runtime;
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum Quantization {
     Bitsandbytes,
+    BitsandbytesNF4,
+    BitsandbytesFP4,
     Gptq,
     Ct2,
 }
@@ -32,6 +34,12 @@ impl std::fmt::Display for Quantization {
         match self {
             Quantization::Bitsandbytes => {
                 write!(f, "bitsandbytes")
+            }
+            Quantization::BitsandbytesNF4 => {
+                write!(f, "bitsandbytes-nf4")
+            }
+            Quantization::BitsandbytesFP4 => {
+                write!(f, "bitsandbytes-fp4")
             }
             Quantization::Gptq => {
                 write!(f, "gptq")
@@ -100,7 +108,8 @@ struct Args {
     num_shard: Option<usize>,
 
     /// Whether you want the model to be quantized. This will use `bitsandbytes` for
-    /// quantization on the fly, `gptq`, or `ctranslate2`.
+    /// quantization on the fly, `bnb` or `gptq`, or `ctranslate2`. 4bit quantization is available through 
+    /// `bitsandbytes` by providing the `bitsandbytes-fp4` or `bitsandbytes-nf4` options.
     #[clap(long, env, value_enum)]
     quantize: Option<Quantization>,
 
