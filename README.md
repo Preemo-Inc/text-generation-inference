@@ -34,6 +34,7 @@ You may set the `TGICHAT_(USER|ASS|SYS)_(PRE|POST)` environment variables, to wr
   <summary>Optimal Llama-2-Chat config</summary>
   For Llama-2, you should wrap each chat message with a different strings, depending on the role.
   Supported roles are `assistant`, `user`, `system`.
+  
   ```bash
   TGICHAT_USER_PRE=" [INST] "
   TGICHAT_USER_POST=" [\\INST] "
@@ -44,6 +45,7 @@ You may set the `TGICHAT_(USER|ASS|SYS)_(PRE|POST)` environment variables, to wr
   ```
 
   Note: To access a gated model, you may need to set: `HUGGING_FACE_HUB_TOKEN` for your access token.
+  
 </details>
 
 ## Get started with Docker
