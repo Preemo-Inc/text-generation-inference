@@ -51,7 +51,7 @@ You may set the `TGICHAT_(USER|ASS|SYS)_(PRE|POST)` environment variables, to wr
 ```bash
 model=TheBloke/Llama-2-13B-Chat-fp16 # around 14GB Vram.
 volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
-image=docker.io/michaelf34/tgi:03-10-2023
+image=docker.io/michaelf34/tgi:03-10-2023 # docker image by @michaelfeil
 
 docker run --gpus all --shm-size 1g -p 8080:80 -v $volume:/data $image --model-id $model --quantize ct2
 ```
