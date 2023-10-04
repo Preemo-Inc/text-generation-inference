@@ -99,7 +99,7 @@ async fn compat_generate(
     }
 }
 
-/// Plain Completion request. Enable stream of token by setting `stream == true`
+/// Plain Completion request. Enable stream of token by setting `stream == true`, (in Python use: pip install openai>=0.28.1)
 #[utoipa::path(
     post,
     tag = "Text Generation Inference",
@@ -147,7 +147,7 @@ async fn completions_generate(
     }
 }
 
-/// Chat Completion request. Enable stream of token by setting `stream == true`
+/// Chat Completion request. Enable stream of token by setting `stream == true`, (in Python use: pip install openai>=0.28.1)
 #[utoipa::path(
     post,
     tag = "Text Generation Inference",
